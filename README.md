@@ -2,6 +2,7 @@
 
 > A modular Model Context Protocol (MCP) server that turns a codebase into a queryable knowledge base: project indexing, semantic vector search, static analysis, rule-based auto-fixes and a layered agent memory, all exposed as MCP tools over stdio, HTTP or SSE.
 
+[![CI Pipeline](https://github.com/NURJAKS/ZOD-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/NURJAKS/ZOD-mcp-server/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
 ![Node](https://img.shields.io/badge/Node.js-18+-339933?logo=nodedotjs&logoColor=white)
 ![MCP](https://img.shields.io/badge/protocol-MCP-black)

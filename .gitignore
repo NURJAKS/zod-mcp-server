@@ -307,3 +307,9 @@ credentials.json
 !ZOD_CORE_USAGE_EXAMPLES.md
 !FINAL_IMPLEMENTATION_SUMMARY.md
 !MIND_CORE_SUMMARY.md
+
+# Temporary test indexes and debug scripts
+*-index*.json
+test_index.json
+debug*.js
+demo*.js
