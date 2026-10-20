@@ -1074,3 +1074,4 @@ export class DocumentationIndexer {
       .trim()
   }
 }
+export { Indexer as RepositoryIndexer };
