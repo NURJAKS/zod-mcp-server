@@ -1,161 +1,126 @@
-# 🚀 ZOD MCP Server
+# ZOD MCP Server
 
-Интеллектуальный MCP‑сервер с индексированием кода, семантическим поиском и набором инструментов.
+> A modular Model Context Protocol (MCP) server that turns a codebase into a queryable knowledge base: project indexing, semantic vector search, static analysis, rule-based auto-fixes and a layered agent memory, all exposed as MCP tools over stdio, HTTP or SSE.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-blue.svg)](https://www.typescriptlang.org/)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
+![Node](https://img.shields.io/badge/Node.js-18+-339933?logo=nodedotjs&logoColor=white)
+![MCP](https://img.shields.io/badge/protocol-MCP-black)
+![Vitest](https://img.shields.io/badge/tests-Vitest-6E9F18?logo=vitest&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-yellow)
+
+Built on the open-source [`instructa/mcp-starter`](https://github.com/instructa/mcp-starter) scaffold (MIT) and extended with the indexing, search, analysis and memory subsystems described below.
 
 ---
 
-## 📖 Overview
+## Architecture Overview
 
-ZOD MCP Server — сервер по спецификации MCP (Model Context Protocol) с возможностями индексирования проектов, гибридного поиска (текст + векторы) и расширяемыми инструментами.
+The server is organized as a **plugin-oriented, layered architecture**. MCP tools are thin handlers; the real work lives in a core layer that is independent of the transport.
 
-## 🏗️ Architecture
+```mermaid
+flowchart TB
+    CLIENT[MCP client<br/>IDE / agent] -->|stdio · HTTP · SSE| SERVER[MCP server<br/>tool registry]
+    SERVER --> ROUTER[ToolRouter]
+    ROUTER --> TOOLS
 
-### Core Components
+    subgraph TOOLS[zod-core tools]
+        IDX[index]
+        SRCH[search]
+        ANL[analyze]
+        FIX[fix]
+        STAT[status]
+    end
+
+    IDX --> INDEXER[Indexer<br/>file scan · hashing · metadata]
+    INDEXER --> SQL[(SQLite)]
+    INDEXER --> VEC
+    SRCH --> LEX[Weighted lexical ranking]
+    SRCH --> VEC[Vector search]
+    VEC -->|embeddings| OR[OpenRouter]
+    VEC --> QD[(Qdrant)]
+    VEC -.->|fallback| LOCAL[(Local vector store)]
+    ANL --> PA[Project analyzer]
+    FIX --> STRAT[Fix strategies]
+    ROUTER --> MEM
+
+    subgraph MEM[Agent memory]
+        WM[Working memory<br/>Redis · SQLite · in-memory]
+        SM[Semantic memory]
+        RL[Reflective layer]
+    end
 ```
-src/
-├── core/                    # Core business logic
-│   ├── indexer.ts          # Project indexing engine
-│   ├── vector-search.ts    # Vector search and embeddings
-│   ├── database.ts         # Database management
-│   ├── search.ts           # Hybrid search engine
-│   ├── project-analyzer.ts # Code analysis and metrics
-│   └── config-manager.ts   # Configuration management
-├── tools/                   # MCP tool implementations
-│   ├── zod-core/           # Core ZOD tools
-│   ├── documentation/      # Documentation tools
-│   ├── repository/         # Repository management
-│   └── unified-search/     # Web and deep research
-├── domains/                 # Domain-specific logic
-├── application/             # Application services
-├── presentation/            # API and interface layers
-└── shared/                  # Shared utilities and types
+
+**Layering** (under `src/`):
+
+| Layer | Responsibility |
+| :-- | :-- |
+| `core/` | Indexer, vector search, lexical search, SQLite persistence, config/env management, caching, plugin manager |
+| `tools/zod-core/` | MCP-facing tools: index, search, analyze, fix, status, plus the router and memory layers |
+| `plugins/` | Extension points (agent, project-analysis, visualization) loaded through a plugin manager |
+| `shared/` | Dependency-injection service container, logging service, typed error model |
+
+---
+
+## Key Features
+
+### 1. Pluggable vector retrieval with graceful degradation
+Embeddings are generated through OpenRouter and stored in **Qdrant** using cosine distance, with separate `files` and `pages` collections created to match the embedding dimension. If embeddings or the vector database are unavailable, the system **degrades to an embedded local vector store or returns no semantic results instead of throwing**, so lexical search keeps working.
+
+### 2. Rule-based, reviewable auto-fix engine
+`core-fix` applies a catalogue of 12+ named fix strategies (for example `remove-console-log`, `fix-loose-equality`, `replace-any-with-unknown`, `fix-eval-usage`, `fix-async-foreach`, `fix-innerhtml-usage`, plus Python rules such as `fix-bare-except`). Each strategy is an isolated unit, which makes the engine easy to extend and its changes predictable.
+
+### 3. Tiered agent memory
+The memory subsystem separates **working memory** (a provider interface with Redis, SQLite and in-memory implementations selected by a factory), **semantic memory** and a **reflective layer** for reasoning over results. Backends are swappable behind one interface.
+
+### 4. Multi-transport MCP surface
+The same tool set can be served over **stdio**, **HTTP** or **SSE**, with dev scripts that wire in the MCP Inspector. The server tracks its registered tools for introspection and testing.
+
+### 5. Test coverage at two levels
+About 120 Vitest cases across 16 spec files: unit tests for the indexer and vector search, and integration tests for the analyze, explain, fix, index, search and status flows, including edge cases and a cross-workflow scenario.
+
+---
+
+## Tech Stack & Rationale
+
+| Technology | Why it was chosen |
+| :-- | :-- |
+| **TypeScript (strict typing) + ESM** | Typed tool contracts and a compile-time safety net across a large multi-module codebase. |
+| **@modelcontextprotocol/sdk** | Reference implementation of MCP, giving standards-compliant transports and tool schemas. |
+| **Zod** | Runtime validation of tool inputs, matching the typed schemas exposed to clients. |
+| **Qdrant** | Purpose-built vector database with cosine search and payload filtering. |
+| **SQLite** | Zero-ops structured storage for indexed file metadata and local persistence. |
+| **Redis (optional)** | Fast shared working memory when available, with SQLite and in-memory fallbacks. |
+| **OpenRouter** | Single gateway to multiple embedding models, so the model is configurable rather than hard-wired. |
+| **Vitest** | Fast TypeScript-native test runner with a coverage option. |
+| **unbuild / tsx** | Quick builds for the published CLI and fast local development. |
+
+---
+
+## Getting Started
+
+```bash
+git clone https://github.com/NURJAKS/ZOD-mcp-server.git
+cd ZOD-mcp-server
+npm install
+cp env.example .env     # configure embeddings / optional Qdrant & Redis
+npm run build
+
+npm run dev-stdio       # stdio transport + MCP Inspector
+npm run dev-http        # HTTP transport on :4200
+npm run dev-sse         # SSE transport on :4201
+npm test                # Vitest suite
 ```
 
-### Data Flow
-```
-Project Input → Indexer → Database + Vector Store → Search Engine → Results
-     ↓              ↓              ↓                    ↓
-  File Scan    Content Parse   Embedding Gen    Hybrid Search
-     ↓              ↓              ↓                    ↓
-  Language     Metadata      Vector Storage    Semantic + Text
-  Detection    Extraction    Indexing        Results Ranking
-```
-
-## 🚀 Features
-### 🔍 Intelligent Indexing
-- Multi-language support (TypeScript, JavaScript, Python, etc.)
-- Smart file filtering (excludes build artifacts, dependencies)
-- Incremental updates with change detection
-- Parallel processing for large projects
-
-### 🧠 Vector Search
-- Semantic code search using embeddings
-- Multiple embedding models (OpenAI, local alternatives)
-- Hybrid search combining vector and text search
-- Context-aware results with relevance scoring
-
-### 📊 Code Analysis
-- Quality metrics calculation
-- Maintainability scoring
-- Test coverage analysis
-- Performance profiling
-
-### 🔧 MCP Integration
-- Standard MCP protocol compliance
-- Multiple transport modes (HTTP, SSE, stdio)
-- Extensible tool system
-- Plugin architecture
-
 ---
 
-## Project Overview
+## Known Limitations & Roadmap
 
-ZOD MCP Server provides advanced codebase indexing, semantic search, and research tools for developers and teams. It integrates with vector databases, graph databases, and cloud storage for scalable, intelligent code analysis.
-
-**GitHub Origin:** [NURJAKS/ZOD-mcp-server](https://github.com/NURJAKS/ZOD-mcp-server)
-
----
-
-## Prerequisites
-- **Node.js** v18 or higher
-- **npm** (comes with Node.js)
-- (Optional) Docker for running dependencies like Qdrant, Redis, Neo4j, MinIO
-
----
-
-## Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/NURJAKS/ZOD-mcp-server.git
-   cd ZOD-mcp-server
-   ```
-
-2. **Run the setup script:**
-   ```bash
-   ./setup.sh
-   ```
-   This will:
-   - Check Node.js version
-   - Install dependencies
-   - Build the project
-   - Create a `.env` file from `env.example` if not present
-
----
-
-## Environment Setup
-
-- Edit the `.env` file with your API keys and service endpoints. See `env.example` for all required variables:
-  - GitHub, OpenRouter, Qdrant, Redis, Neo4j, MinIO, and more
-- Example:
-  ```env
-  GITHUB_TOKEN=your_github_token
-  OPENROUTER_API_KEY=your_openrouter_api_key
-  QDRANT_URL=http://localhost:6333
-  ...
-  ```
-
----
-
-## Running the Server
-
-- **Development (with hot reload):**
-  ```bash
-  npm run dev
-  ```
-- **Production build:**
-  ```bash
-  npm run build
-  npm start
-  ```
-- **CLI usage:**
-  ```bash
-  node bin/cli.mjs --help
-  ```
-
----
-
-## Useful Commands
-- `npm run dev-stdio` — Run with stdio transport
-- `npm run dev-http` — Run with HTTP transport
-- `npm run lint` — Lint the codebase
-- `npm run test` — Run tests
-- `npm run build` — Build the project
-
----
-
-## Contribution
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
-
----
+- The lexical ranking uses fixed heuristic weights (path 0.4, content 0.4, language 0.1, term matches 0.1); it does not yet fuse scores with the vector results.
+- File hashing in the indexer is a lightweight 32-bit hash; moving to a cryptographic hash (`crypto`) is a planned improvement.
+- Several top-level modules are large (for example `core-index.ts`, 1.7k lines) and are candidates for splitting.
+- Some package metadata is still scaffold placeholders and should be rebranded before publishing.
+- The `Dockerfile` is currently empty; a multi-stage container image is a planned addition.
+- Debug scripts and sample index files at the repository root should move under `scripts/` or be removed.
 
 ## License
+
 MIT
-
----
-
-**Made with ❤️ by the ZOD Team**
